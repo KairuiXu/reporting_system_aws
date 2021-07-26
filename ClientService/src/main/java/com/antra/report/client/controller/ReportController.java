@@ -3,20 +3,28 @@ package com.antra.report.client.controller;
 import com.antra.report.client.pojo.FileType;
 import com.antra.report.client.pojo.reponse.ErrorResponse;
 import com.antra.report.client.pojo.reponse.GeneralResponse;
+import com.antra.report.client.pojo.reponse.JwtAuthenticationResponse;
 import com.antra.report.client.pojo.request.ReportRequest;
+import com.antra.report.client.security.JwtTokenProvider;
 import com.antra.report.client.service.ReportService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.FileCopyUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @RestController
@@ -24,10 +32,18 @@ public class ReportController {
     private static final Logger log = LoggerFactory.getLogger(ReportController.class);
 
     private final ReportService reportService;
+    private final JwtTokenProvider jwtTokenProvider;
 
-    public ReportController(ReportService reportService) {
+    public ReportController(ReportService reportService,JwtTokenProvider jwtTokenProvider) {
         this.reportService = reportService;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
+
+    @RequestMapping(value = "/deleteall", method = RequestMethod.GET)
+    public void delete() {
+        reportService.deleteall();
+    }
+
 
     @GetMapping("/report")
     public ResponseEntity<GeneralResponse> listReport() {
@@ -43,18 +59,21 @@ public class ReportController {
     }
 
     @PostMapping("/report/sync")
-    public ResponseEntity<GeneralResponse> createReportDirectly(@RequestBody @Validated ReportRequest request) {
+    public ResponseEntity<?> createReportDirectly(@RequestBody @Validated ReportRequest request) {
         log.info("Got Request to generate report - sync: {}", request);
         request.setDescription(String.join(" - ", "Sync", request.getDescription()));
-        return ResponseEntity.ok(new GeneralResponse(reportService.generateReportsSync(request)));
+        reportService.generateReportsSync(request);
+        String jwt = jwtTokenProvider.generateToken(request);
+        return ResponseEntity.ok(new JwtAuthenticationResponse(jwt));
     }
 
     @PostMapping("/report/async")
-    public ResponseEntity<GeneralResponse> createReportAsync(@RequestBody @Validated ReportRequest request) {
+    public ResponseEntity<?> createReportAsync(@RequestBody @Validated ReportRequest request) {
         log.info("Got Request to generate report - async: {}", request);
         request.setDescription(String.join(" - ", "Async", request.getDescription()));
         reportService.generateReportsAsync(request);
-        return ResponseEntity.ok(new GeneralResponse());
+        String jwt = jwtTokenProvider.generateToken(request);
+        return ResponseEntity.ok(new JwtAuthenticationResponse(jwt));
     }
 
     @GetMapping("/report/content/{reqId}/{type}")
@@ -79,9 +98,6 @@ public class ReportController {
         }
         log.debug("Downloaded File:{}", reqId);
     }
-
-//   @DeleteMapping
-//   @PutMapping
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<GeneralResponse> handleValidationException(MethodArgumentNotValidException e) {

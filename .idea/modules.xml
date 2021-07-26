@@ -7,6 +7,7 @@
       <module fileurl="file://$PROJECT_DIR$/PDFService/PDFService.iml" filepath="$PROJECT_DIR$/PDFService/PDFService.iml" />
       <module fileurl="file://$PROJECT_DIR$/config_server/config_server.iml" filepath="$PROJECT_DIR$/config_server/config_server.iml" />
       <module fileurl="file://$PROJECT_DIR$/reporting_system_aws.iml" filepath="$PROJECT_DIR$/reporting_system_aws.iml" />
+      <module fileurl="file://$PROJECT_DIR$/service_discovery/service_discovery.iml" filepath="$PROJECT_DIR$/service_discovery/service_discovery.iml" />
     </modules>
   </component>
 </project>

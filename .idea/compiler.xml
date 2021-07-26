@@ -6,6 +6,7 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="service_discovery" />
         <module name="ExcelService" />
         <module name="PDFService" />
         <module name="ClientService" />
@@ -18,6 +19,7 @@
       <module name="ExcelService" target="11" />
       <module name="PDFService" target="11" />
       <module name="reporting_system_aws" target="1.5" />
+      <module name="service_discovery" target="11" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
@@ -26,6 +28,7 @@
       <module name="ExcelService" options="-parameters" />
       <module name="PDFService" options="-parameters" />
       <module name="config_server" options="-parameters" />
+      <module name="service_discovery" options="-parameters" />
     </option>
   </component>
 </project>

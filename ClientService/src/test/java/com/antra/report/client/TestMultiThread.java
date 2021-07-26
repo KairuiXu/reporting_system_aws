@@ -1,7 +1,7 @@
 package com.antra.report.client;
 
 import com.antra.report.client.pojo.reponse.ExcelResponse;
-import org.junit.jupiter.api.Test;
+import org.testng.annotations.Test;
 
 import java.util.concurrent.CompletableFuture;
 

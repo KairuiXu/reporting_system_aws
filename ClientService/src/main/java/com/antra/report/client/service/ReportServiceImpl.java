@@ -14,9 +14,13 @@ import com.antra.report.client.pojo.reponse.ReportVO;
 import com.antra.report.client.pojo.reponse.SqsResponse;
 import com.antra.report.client.pojo.request.ReportRequest;
 import com.antra.report.client.repository.ReportRequestRepo;
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixCommand;
+import com.netflix.hystrix.contrib.javanica.annotation.HystrixProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
@@ -40,12 +44,18 @@ public class ReportServiceImpl implements ReportService {
     private final SNSService snsService;
     private final AmazonS3 s3Client;
     private final EmailService emailService;
+    private final RestTemplate restTemplate;
 
-    public ReportServiceImpl(ReportRequestRepo reportRequestRepo, SNSService snsService, AmazonS3 s3Client, EmailService emailService) {
+    public ReportServiceImpl(ReportRequestRepo reportRequestRepo, SNSService snsService, AmazonS3 s3Client, EmailService emailService,RestTemplate restTemplate) {
         this.reportRequestRepo = reportRequestRepo;
         this.snsService = snsService;
         this.s3Client = s3Client;
         this.emailService = emailService;
+        this.restTemplate = restTemplate;
+    }
+    @Override
+    public void deleteall(){
+        reportRequestRepo.deleteAll();
     }
 
     private ReportRequestEntity persistToLocal(ReportRequest request) {
@@ -76,32 +86,30 @@ public class ReportServiceImpl implements ReportService {
         sendDirectRequests(request);
         return new ReportVO(reportRequestRepo.findById(request.getReqId()).orElseThrow());
     }
-    //TODO:Change to parallel process using Threadpool? CompletableFuture?
+
+    @HystrixCommand(fallbackMethod = "fallbackMethod", commandProperties = {@HystrixProperty(name="execution.isolation.thread.timeoutInMilliseconds", value = "2000")})
     private void sendDirectRequests(ReportRequest request) {
-        RestTemplate rs = new RestTemplate();
+//        RestTemplate rs = new RestTemplate();
         ExcelResponse excelResponse = new ExcelResponse();
         PDFResponse pdfResponse = new PDFResponse();
-        CompletableFuture.runAsync(()-> {
-            ExcelResponse response = rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody();
-            BeanUtils.copyProperties(response,excelResponse);
-        }).exceptionally(e->{
+        CompletableFuture.runAsync(() -> {
+            ExcelResponse response = restTemplate.postForEntity("http://ExcelService/excel", request, ExcelResponse.class).getBody();
+            BeanUtils.copyProperties(response, excelResponse);
+        }).exceptionally(e -> {
             log.error("Excel Generation Error (Sync) : e", e);
             excelResponse.setReqId(request.getReqId());
             excelResponse.setFailed(true);
             return null;
-        }).whenComplete((s,e)->updateLocal(excelResponse));
-        CompletableFuture.runAsync(()-> {
-            PDFResponse response = rs.postForEntity("http://localhost:9999/pdf", request, PDFResponse.class).getBody();
-            BeanUtils.copyProperties(response,pdfResponse);
-        }).exceptionally(e->{
+        }).whenComplete((s, e) -> updateLocal(excelResponse));
+        CompletableFuture.runAsync(() -> {
+            PDFResponse response = restTemplate.postForEntity("http://PDFService/pdf", request, PDFResponse.class).getBody();
+            BeanUtils.copyProperties(response, pdfResponse);
+        }).exceptionally(e -> {
             log.error("PDF Generation Error (Sync) : e", e);
             pdfResponse.setReqId(request.getReqId());
             pdfResponse.setFailed(true);
             return null;
-        }).whenComplete((s,e)->updateLocal(pdfResponse));
-
-
-
+        }).whenComplete((s, e) -> updateLocal(pdfResponse));
 //        try {
 //            excelResponse = rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody();
 //        } catch(Exception e){
@@ -120,6 +128,11 @@ public class ReportServiceImpl implements ReportService {
 //        } finally {
 //            updateLocal(pdfResponse);
 //        }
+    }
+    @SuppressWarnings("unused")
+    public void fallbackMethod(ReportRequest request){
+        log.error("Something wrong to generate record in sync, use Async instead");
+        generateReportsAsync(request);
     }
 
     private void updateLocal(ExcelResponse excelResponse) {
@@ -205,9 +218,9 @@ public class ReportServiceImpl implements ReportService {
 //            } catch (FileNotFoundException e) {
 //                log.error("No file found", e);
 //            }
-            RestTemplate restTemplate = new RestTemplate();
+//            RestTemplate restTemplate = new RestTemplate();
 //            InputStream is = restTemplate.execute(, HttpMethod.GET, null, ClientHttpResponse::getBody, fileId);
-            ResponseEntity<Resource> exchange = restTemplate.exchange("http://localhost:8888/excel/{id}/content",
+            ResponseEntity<Resource> exchange = restTemplate.exchange("http://ExcelService/excel/{id}/content",
                     HttpMethod.GET, null, Resource.class, fileId);
             try {
                 return exchange.getBody().getInputStream();
@@ -221,11 +234,13 @@ public class ReportServiceImpl implements ReportService {
     @Transactional
     public void deleteReport(String reqId){
         ReportRequestEntity entity = reportRequestRepo.findById(reqId).orElseThrow(RequestNotFoundException::new);
-        RestTemplate rs = new RestTemplate();
+//        RestTemplate rs = new RestTemplate();
+//        ServiceInstance excelinstance = loadBalancer.choose("EXCELSERVICE");
         log.info("Send delete request to excel server");
-        rs.delete("http://localhost:8888/excel/{id}",entity.getExcelReport().getFileId());
+        restTemplate.delete("http://ExcelService/excel/{id}",entity.getExcelReport().getFileId());
+//        ServiceInstance pdfinstance = discoveryClient.getInstances("PDFSERVICE").get(0);
         log.info("Send delete request to pdf server");
-        rs.delete("http://localhost:9999/pdf/{id}",entity.getPdfReport().getFileId());
+        restTemplate.delete("http://PDFService/pdf/{id}",entity.getPdfReport().getFileId());
         reportRequestRepo.deleteById(reqId);
     }
 }
